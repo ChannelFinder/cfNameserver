@@ -1,0 +1,15 @@
+/target/
+.settings
+/bin/
+/.project
+/.classpath
+.pydevproject
+*.iml
+**/site/sphinx/build/*
+.idea
+
+### Eclipse ###
+.settings/org.eclipse.jdt.core.prefs
+
+### Docker ###
+docker-compose-local*
