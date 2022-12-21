@@ -12,6 +12,8 @@ import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
 import java.net.InetSocketAddress;
+import java.time.Duration;
+import java.time.temporal.ChronoUnit;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicReference;
@@ -78,6 +80,7 @@ public class CFNameserver implements CommandLineRunner {
     }
 
     private static final String SOCKET_PROP_NAME = "socket_address";
+    private static final Duration TIMEOUT = Duration.of(15, ChronoUnit.SECONDS);
     /**
      * Using the channel finder property "socket_address" whose value is of the form "ip_address:port" and represents the
      * TCP port of the IOC for setting up connections.
@@ -91,13 +94,13 @@ public class CFNameserver implements CommandLineRunner {
         Mono<XmlChannel> xmlChannelMono = response.bodyToMono(XmlChannel.class);
         AtomicReference<String> socketPropertyValue = new AtomicReference<>();
         // parse the socket_address property
-        xmlChannelMono.subscribe(channel -> {
-            channel.getProperties().stream()
-                    .filter(prop -> prop.getName().equalsIgnoreCase(SOCKET_PROP_NAME))
-                    .findFirst().ifPresent(socket -> {
-                        socketPropertyValue.set(socket.getValue());
-                    });
-        });
+        XmlChannel result = xmlChannelMono.block(TIMEOUT);
+        result.getProperties().stream()
+                .filter(prop -> prop.getName().equalsIgnoreCase(SOCKET_PROP_NAME))
+                .findFirst().ifPresent(socket -> {
+                    System.out.println("found:...");
+                    socketPropertyValue.set(socket.getValue());
+                });
         if(socketPropertyValue.get() != null) {
             String[] value = socketPropertyValue.get().split(":");
             if(value.length == 2) {
