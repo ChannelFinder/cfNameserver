@@ -47,6 +47,9 @@ public class CFNameserver implements CommandLineRunner {
         LogManager.getLogManager().readConfiguration(PVASettings.class.getResourceAsStream("/pva_logging.properties"));
         PVASettings.logger.setLevel(Level.ALL);
 
+        // Handler for UDP traffic
+        CFSearchRequestRelay relay = new CFSearchRequestRelay();
+
         // Start PVA server with custom search handler
         final CountDownLatch done = new CountDownLatch(1);
         final SearchHandler search_handler = (seq, cid, name, addr, reply_sender) ->
@@ -64,6 +67,13 @@ public class CFNameserver implements CommandLineRunner {
                 reply_sender.accept(server_addr.get());
             }
 
+            // Forward the search request to the configured UDP/TCP address
+            try {
+                logger.info("forwarding name search: " + name + " cid:" + cid + "seq: "+ seq);
+                relay.forward(seq, cid, name, addr, reply_sender);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
             // Done, don't proceed with default search handler
             return true;
         };
@@ -90,21 +100,28 @@ public class CFNameserver implements CommandLineRunner {
      */
     private Optional<InetSocketAddress> getAddressforPV(String pvName) {
         // retrieve the channel info from channelfinder
-        WebClient.ResponseSpec response = client.get().uri(cfURL + cfResource + pvName).retrieve();
-        Mono<XmlChannel> xmlChannelMono = response.bodyToMono(XmlChannel.class);
+        WebClient.ResponseSpec response = client
+                .get()
+                .uri(cfURL + cfResource + pvName)
+                .retrieve();
+        Mono<XmlChannel> xmlChannelMono = response.bodyToMono(XmlChannel.class).onErrorResume(e -> {
+            return Mono.empty();
+        });
         AtomicReference<String> socketPropertyValue = new AtomicReference<>();
         // parse the socket_address property
         XmlChannel result = xmlChannelMono.block(TIMEOUT);
-        result.getProperties().stream()
-                .filter(prop -> prop.getName().equalsIgnoreCase(SOCKET_PROP_NAME))
-                .findFirst().ifPresent(socket -> {
-                    System.out.println("found:...");
-                    socketPropertyValue.set(socket.getValue());
-                });
-        if(socketPropertyValue.get() != null) {
-            String[] value = socketPropertyValue.get().split(":");
-            if(value.length == 2) {
-                return Optional.of(new InetSocketAddress(value[0], Integer.valueOf(value[1])));
+        if(result != null) {
+            result.getProperties().stream()
+                    .filter(prop -> prop.getName().equalsIgnoreCase(SOCKET_PROP_NAME))
+                    .findFirst().ifPresent(socket -> {
+                        System.out.println("found:...");
+                        socketPropertyValue.set(socket.getValue());
+                    });
+            if(socketPropertyValue.get() != null) {
+                String[] value = socketPropertyValue.get().split(":");
+                if(value.length == 2) {
+                    return Optional.of(new InetSocketAddress(value[0], Integer.valueOf(value[1])));
+                }
             }
         }
         return Optional.empty();
