@@ -71,7 +71,7 @@ public class CFNameserver implements CommandLineRunner {
         try(final PVAServer server = new PVAServer(search_handler)) {
             logger.info("For UDP search, run 'pvget' or 'pvxget' with");
             logger.info("EPICS_PVA_BROADCAST_PORT=" + PVASettings.EPICS_PVAS_BROADCAST_PORT);
-            logger.info("For TCP search, set EPICS_PVA_NAME_SERVERS = " + server.getTCPAddress());
+            logger.info("For TCP search, set EPICS_PVA_NAME_SERVERS = " + server.getTCPAddress(false));
             logger.info("or other IP address of this host and same port.");
             logger.info("Run 'pvget QUIT' to stop");
             done.await();
@@ -79,7 +79,8 @@ public class CFNameserver implements CommandLineRunner {
 
     }
 
-    private static final String SOCKET_PROP_NAME = "socket_address";
+    private static final String SOCKET_PROP_NAME = "iocid";
+    private static final String SOCKET_PVA_PORT = "pvaPort";
     private static final Duration TIMEOUT = Duration.of(15, ChronoUnit.SECONDS);
     /**
      * Using the channel finder property "socket_address" whose value is of the form "ip_address:port" and represents the
@@ -101,10 +102,17 @@ public class CFNameserver implements CommandLineRunner {
                     System.out.println("found:...");
                     socketPropertyValue.set(socket.getValue());
                 });
-        if(socketPropertyValue.get() != null) {
+        AtomicReference<String> pvaPortValue = new AtomicReference<>();
+        result.getProperties().stream()
+                .filter(prop -> prop.getName().equalsIgnoreCase(SOCKET_PVA_PORT))
+                .findFirst().ifPresent(socket -> {
+                    System.out.println("found:...");
+                    pvaPortValue.set(socket.getValue());
+                });
+        if(socketPropertyValue.get() != null && pvaPortValue.get() != null) {
             String[] value = socketPropertyValue.get().split(":");
             if(value.length == 2) {
-                return Optional.of(new InetSocketAddress(value[0], Integer.valueOf(value[1])));
+                return Optional.of(new InetSocketAddress(value[0], Integer.parseInt(pvaPortValue.get())));
             }
         }
         return Optional.empty();
