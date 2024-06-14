@@ -79,8 +79,8 @@ public class CFNameserver implements CommandLineRunner {
 
     }
 
-    private static final String SOCKET_PROP_NAME = "iocid";
-    private static final String SOCKET_PVA_PORT = "pvaPort";
+    private static final String IOC_IP_PROP_NAME = "iocIP";
+    private static final String PVA_PORT_PROP_NAME = "pvaPort";
     private static final Duration TIMEOUT = Duration.of(15, ChronoUnit.SECONDS);
     /**
      * Using the channel finder property "socket_address" whose value is of the form "ip_address:port" and represents the
@@ -93,27 +93,24 @@ public class CFNameserver implements CommandLineRunner {
         // retrieve the channel info from channelfinder
         WebClient.ResponseSpec response = client.get().uri(cfURL + cfResource + pvName).retrieve();
         Mono<XmlChannel> xmlChannelMono = response.bodyToMono(XmlChannel.class);
-        AtomicReference<String> socketPropertyValue = new AtomicReference<>();
+        AtomicReference<String> iocIPPropertyValue = new AtomicReference<>();
         // parse the socket_address property
         XmlChannel result = xmlChannelMono.block(TIMEOUT);
         result.getProperties().stream()
-                .filter(prop -> prop.getName().equalsIgnoreCase(SOCKET_PROP_NAME))
+                .filter(prop -> prop.getName().equalsIgnoreCase(IOC_IP_PROP_NAME))
                 .findFirst().ifPresent(socket -> {
                     System.out.println("found:...");
-                    socketPropertyValue.set(socket.getValue());
+                    iocIPPropertyValue.set(socket.getValue());
                 });
-        AtomicReference<String> pvaPortValue = new AtomicReference<>();
+        AtomicReference<String> pvaPortPropertyValue = new AtomicReference<>();
         result.getProperties().stream()
-                .filter(prop -> prop.getName().equalsIgnoreCase(SOCKET_PVA_PORT))
+                .filter(prop -> prop.getName().equalsIgnoreCase(PVA_PORT_PROP_NAME))
                 .findFirst().ifPresent(socket -> {
                     System.out.println("found:...");
-                    pvaPortValue.set(socket.getValue());
+                    pvaPortPropertyValue.set(socket.getValue());
                 });
-        if(socketPropertyValue.get() != null && pvaPortValue.get() != null) {
-            String[] value = socketPropertyValue.get().split(":");
-            if(value.length == 2) {
-                return Optional.of(new InetSocketAddress(value[0], Integer.parseInt(pvaPortValue.get())));
-            }
+        if(iocIPPropertyValue.get() != null && pvaPortPropertyValue.get() != null) {
+              return Optional.of(new InetSocketAddress(iocIPPropertyValue.get(), Integer.parseInt(pvaPortPropertyValue.get())));
         }
         return Optional.empty();
     }
