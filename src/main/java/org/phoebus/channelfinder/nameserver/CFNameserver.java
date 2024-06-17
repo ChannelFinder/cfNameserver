@@ -26,8 +26,23 @@ public class CFNameserver implements CommandLineRunner {
 
     @Value("${cf.url:http://localhost:8080}")
     private String cfURL;
-    @Value("${cf.resources:/ChannelFinder/resources/channels/}")
+    @Value("${cf.resources:/ChannelFinder/resources/channels?}")
     private String cfResource;
+    @Value("${cf.property.ioc_ip_address_name:iocIP}")
+    private String iocIPPropertyName;
+    @Value("${cf.property.pva_port_name:pvaPort}")
+    private String pvaPortPropertyName;
+    @Value("${cf.timeout:15}")
+    private Long timeout;
+    @Value("${epics.pva.broadcast.port:5076}")
+    private String epicsPVABroadcastPort;
+    @Value("${epics.pva.server.port:5076}")
+    private String epicsPVAServerPort;
+    @Value("${cf.use_pvStatus:false}")
+    private Boolean usePVStatus;
+
+    private Duration cfTimeout;
+    private String cfQueryString;
 
     private WebClient client = WebClient.create();
 
@@ -41,11 +56,19 @@ public class CFNameserver implements CommandLineRunner {
 
     @Override
     public void run(String... args) throws Exception {
-        System.setProperty("EPICS_PVAS_BROADCAST_PORT", "5076");
-        System.setProperty("EPICS_PVA_SERVER_PORT", "5076");
+        System.setProperty("EPICS_PVAS_BROADCAST_PORT", epicsPVABroadcastPort);
+        System.setProperty("EPICS_PVA_SERVER_PORT", epicsPVAServerPort);
 
         LogManager.getLogManager().readConfiguration(PVASettings.class.getResourceAsStream("/pva_logging.properties"));
         PVASettings.logger.setLevel(Level.ALL);
+
+        cfTimeout = Duration.of(timeout, ChronoUnit.SECONDS);
+        if(usePVStatus) {
+            cfQueryString = cfURL + cfResource + "pvStatus=Active&~name=";
+        }
+        else {
+            cfQueryString = cfURL + cfResource + "~name=";
+        }
 
         // Start PVA server with custom search handler
         final CountDownLatch done = new CountDownLatch(1);
@@ -79,9 +102,6 @@ public class CFNameserver implements CommandLineRunner {
 
     }
 
-    private static final String IOC_IP_PROP_NAME = "iocIP";
-    private static final String PVA_PORT_PROP_NAME = "pvaPort";
-    private static final Duration TIMEOUT = Duration.of(15, ChronoUnit.SECONDS);
     /**
      * Using the channel finder property "socket_address" whose value is of the form "ip_address:port" and represents the
      * TCP port of the IOC for setting up connections.
@@ -91,20 +111,23 @@ public class CFNameserver implements CommandLineRunner {
      */
     private Optional<InetSocketAddress> getAddressforPV(String pvName) {
         // retrieve the channel info from channelfinder
-        WebClient.ResponseSpec response = client.get().uri(cfURL + cfResource + pvName).retrieve();
-        Mono<XmlChannel> xmlChannelMono = response.bodyToMono(XmlChannel.class);
+        WebClient.ResponseSpec response = client.get().uri(cfQueryString + pvName).retrieve();
+        Mono<XmlChannel> xmlChannelMono = Mono.from(response.bodyToFlux(XmlChannel.class));
+        XmlChannel result = xmlChannelMono.block(cfTimeout);
+        if(result == null) {
+            return Optional.empty();
+        }
+        // parse the IP address and PVA port properties
         AtomicReference<String> iocIPPropertyValue = new AtomicReference<>();
-        // parse the socket_address property
-        XmlChannel result = xmlChannelMono.block(TIMEOUT);
         result.getProperties().stream()
-                .filter(prop -> prop.getName().equalsIgnoreCase(IOC_IP_PROP_NAME))
+                .filter(prop -> prop.getName().equalsIgnoreCase(iocIPPropertyName))
                 .findFirst().ifPresent(socket -> {
                     System.out.println("found:...");
                     iocIPPropertyValue.set(socket.getValue());
                 });
         AtomicReference<String> pvaPortPropertyValue = new AtomicReference<>();
         result.getProperties().stream()
-                .filter(prop -> prop.getName().equalsIgnoreCase(PVA_PORT_PROP_NAME))
+                .filter(prop -> prop.getName().equalsIgnoreCase(pvaPortPropertyName))
                 .findFirst().ifPresent(socket -> {
                     System.out.println("found:...");
                     pvaPortPropertyValue.set(socket.getValue());
